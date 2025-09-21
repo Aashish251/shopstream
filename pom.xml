@@ -9,7 +9,7 @@
         <relativePath/>
     </parent>
     <groupId>com.hoangtien2k3</groupId>
-    <artifactId>ecommerce-microservices</artifactId>
+    <artifactId>shopstream</artifactId>
     <version>${revision}</version>
     <packaging>pom</packaging>
     <name>ecommerce-microservices</name>
