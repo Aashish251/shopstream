@@ -1,20 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>com.hoangtien2k3</groupId>
         <artifactId>ecommerce-microservices</artifactId>
-        <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <version>1.0.0</version> <!-- Use your actual parent version! -->
+        <relativePath>../ecommerce-microservices/pom.xml</relativePath> <!-- Correct relative path -->
     </parent>
+
     <artifactId>media-service</artifactId>
-    <version>${revision}</version>
+    <version>1.0.0</version> <!-- Match parent version! -->
     <name>media-service</name>
     <description>Media Service</description>
-    <properties>
 
+    <properties>
+        <java.version>17</java.version> <!-- Set if your project uses Java 17 -->
     </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -50,20 +55,22 @@
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
         </dependency>
+        <!-- Add the common-lib dependency only if you have built it locally or as another module -->
         <dependency>
             <groupId>com.hoangtien2k3</groupId>
             <artifactId>common-lib</artifactId>
-            <version>${revision}</version>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>com.hoangtien2k3</groupId>
             <artifactId>common-lib</artifactId>
-            <version>${revision}</version>
+            <version>1.0.0</version>
             <classifier>tests</classifier>
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
     </dependencies>
+
     <build>
         <plugins>
             <plugin>
