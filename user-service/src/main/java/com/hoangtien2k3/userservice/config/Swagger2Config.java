@@ -43,7 +43,9 @@ public class Swagger2Config {
         return new ApiInfoBuilder()
                 .title("USER-SERVICE API DOCUMENTATIONS")
                 .description("API Documentation's USER-SERVICE")
-                .contact(new Contact("hoangtien2k3", "https://hoangtien2k3qx1.github.io/", "hoangtien2k3qx1@gmail.com"))
+                .contact(new Contact("hoangtien2k3",
+                        "https://hoangtien2k3qx1.github.io/",
+                        "hoangtien2k3qx1@gmail.com"))
                 .license("MIT")
                 .licenseUrl("https://mit-license.org/")
                 .version("1.0.0")
@@ -61,34 +63,54 @@ public class Swagger2Config {
     }
 
     private List<SecurityReference> defaultAuth() {
-        AuthorizationScope authorizationScope = new AuthorizationScope("global", "accessEverything");
-        SecurityReference reference = new SecurityReference("JWT", new AuthorizationScope[]{authorizationScope});
+        AuthorizationScope authorizationScope =
+                new AuthorizationScope("global", "accessEverything");
+        SecurityReference reference =
+                new SecurityReference("JWT", new AuthorizationScope[]{authorizationScope});
         return List.of(reference);
     }
 
+    /**
+     * ✅ Updated for Spring Boot 3.x:
+     * Removed the 7th `null` parameter from WebMvcEndpointHandlerMapping constructor
+     */
     @Bean
-    public WebMvcEndpointHandlerMapping webEndpointServletHandlerMapping(WebEndpointsSupplier webEndpointsSupplier,
-                                                                         ServletEndpointsSupplier servletEndpointsSupplier, ControllerEndpointsSupplier controllerEndpointsSupplier,
-                                                                         EndpointMediaTypes endpointMediaTypes, CorsEndpointProperties corsProperties,
-                                                                         WebEndpointProperties webEndpointProperties, Environment environment) {
+    public WebMvcEndpointHandlerMapping webEndpointServletHandlerMapping(
+            WebEndpointsSupplier webEndpointsSupplier,
+            ServletEndpointsSupplier servletEndpointsSupplier,
+            ControllerEndpointsSupplier controllerEndpointsSupplier,
+            EndpointMediaTypes endpointMediaTypes,
+            CorsEndpointProperties corsProperties,
+            WebEndpointProperties webEndpointProperties,
+            Environment environment) {
+
         List<ExposableEndpoint<?>> allEndpoints = new ArrayList<>();
         Collection<ExposableWebEndpoint> webEndpoints = webEndpointsSupplier.getEndpoints();
         allEndpoints.addAll(webEndpoints);
         allEndpoints.addAll(servletEndpointsSupplier.getEndpoints());
         allEndpoints.addAll(controllerEndpointsSupplier.getEndpoints());
+
         String basePath = webEndpointProperties.getBasePath();
         EndpointMapping endpointMapping = new EndpointMapping(basePath);
-        boolean shouldRegisterLinksMapping = this.shouldRegisterLinksMapping(webEndpointProperties, environment,
-                basePath);
-        return new WebMvcEndpointHandlerMapping(endpointMapping, webEndpoints, endpointMediaTypes,
-                corsProperties.toCorsConfiguration(), new EndpointLinksResolver(allEndpoints, basePath),
-                shouldRegisterLinksMapping, null);
+
+        boolean shouldRegisterLinksMapping =
+                this.shouldRegisterLinksMapping(webEndpointProperties, environment, basePath);
+
+        return new WebMvcEndpointHandlerMapping(
+                endpointMapping,
+                webEndpoints,
+                endpointMediaTypes,
+                corsProperties.toCorsConfiguration(),
+                new EndpointLinksResolver(allEndpoints, basePath),
+                shouldRegisterLinksMapping
+        );
     }
 
-    private boolean shouldRegisterLinksMapping(WebEndpointProperties webEndpointProperties, Environment environment,
+    private boolean shouldRegisterLinksMapping(WebEndpointProperties webEndpointProperties,
+                                               Environment environment,
                                                String basePath) {
-        return webEndpointProperties.getDiscovery().isEnabled() && (StringUtils.hasText(basePath)
+        return webEndpointProperties.getDiscovery().isEnabled()
+                && (StringUtils.hasText(basePath)
                 || ManagementPortType.get(environment).equals(ManagementPortType.DIFFERENT));
     }
-
 }

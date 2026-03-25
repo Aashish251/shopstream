@@ -1,6 +1,9 @@
 package com.hoangtien2k3.orderservice.security;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -9,6 +12,9 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.security.Key;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,11 +28,16 @@ public class JwtProvider {
     @Value("${jwt.expiration}")
     private int jwtExpiration;
 
+    private Key getSigningKey() {
+        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
     public Authentication getAuthentication(String token) {
         Claims claims = Jwts.parser()
-                .setSigningKey(jwtSecret)
-                .parseClaimsJws(token)
-                .getBody();
+                .verifyWith((SecretKey) getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
 
         String username = claims.getSubject();
         List<GrantedAuthority> authorities = extractAuthorities(claims);
@@ -41,9 +52,7 @@ public class JwtProvider {
         List<String> roles = (List<String>) claims.get("authorities");
 
         if (roles != null) {
-            roles.forEach(role -> {
-                authorities.add(new SimpleGrantedAuthority(role));
-            });
+            roles.forEach(role -> authorities.add(new SimpleGrantedAuthority(role)));
         }
 
         return authorities;
@@ -52,22 +61,14 @@ public class JwtProvider {
     public Boolean validateToken(String token) {
         try {
             Jwts.parser()
-                    .setSigningKey(jwtSecret)
-                    .parseClaimsJws(token);
+                    .verifyWith((SecretKey) getSigningKey())
+                    .build()
+                    .parseSignedClaims(token);
 
             return true;
-        } catch (SignatureException e) {
-            log.error("Invalid JWT signature -> Message: ", e);
-        } catch (MalformedJwtException e) {
-            log.error("Invalid format Token -> Message: ", e);
-        } catch (ExpiredJwtException e) {
-            log.error("Expired JWT Token -> Message: ", e);
-        } catch (UnsupportedJwtException e) {
-            log.error("Unsupported JWT Token -> Message: ", e);
-        } catch (IllegalArgumentException e) {
-            log.error("JWT claims string is empty -> Message: ", e);
+        } catch (JwtException e) {
+            log.error("Invalid JWT Token -> Message: {}", e.getMessage());
         }
         return false;
     }
-
 }

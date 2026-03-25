@@ -7,6 +7,7 @@ import com.hoangtien2k3.userservice.exception.wrapper.*;
 import com.hoangtien2k3.userservice.model.dto.request.*;
 import com.hoangtien2k3.userservice.model.dto.response.InformationMessage;
 import com.hoangtien2k3.userservice.model.dto.response.JwtResponseMessage;
+//import com.hoangtien2k3.userservice.model.dto.response.UserDto;
 import com.hoangtien2k3.userservice.model.entity.RoleName;
 import com.hoangtien2k3.userservice.model.entity.User;
 import com.hoangtien2k3.userservice.repository.UserRepository;
@@ -15,12 +16,13 @@ import com.hoangtien2k3.userservice.security.userprinciple.UserDetailService;
 import com.hoangtien2k3.userservice.security.userprinciple.UserPrinciple;
 import com.hoangtien2k3.userservice.service.RoleService;
 import com.hoangtien2k3.userservice.service.UserService;
+import jakarta.transaction.Transactional;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.*;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,9 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.context.Context;
 
-import javax.transaction.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -40,6 +40,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class UserServiceImpl implements UserService {
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
@@ -47,9 +48,10 @@ public class UserServiceImpl implements UserService {
     private final ModelMapper modelMapper;
     private final RoleService roleService;
 
-    Gson gson = new Gson(); // google.code.gson
+    private final Gson gson = new Gson();
+
     @Autowired
-    EventProducer eventProducer;
+    private EventProducer eventProducer;
 
     @Autowired
     private WebClient.Builder webClientBuilder;
@@ -63,8 +65,7 @@ public class UserServiceImpl implements UserService {
                            JwtProvider jwtProvider,
                            UserDetailService userDetailsService,
                            ModelMapper modelMapper,
-                           RoleService roleService
-    ) {
+                           RoleService roleService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtProvider = jwtProvider;
@@ -77,13 +78,13 @@ public class UserServiceImpl implements UserService {
     public Mono<User> register(SignUp signUp) {
         return Mono.defer(() -> {
             if (existsByUsername(signUp.getUsername())) {
-                return Mono.error(new EmailOrUsernameNotFoundException("The username " + signUp.getUsername() + " is existed, please try again."));
+                return Mono.error(new EmailOrUsernameNotFoundException("The username " + signUp.getUsername() + " already exists."));
             }
             if (existsByEmail(signUp.getEmail())) {
-                return Mono.error(new EmailOrUsernameNotFoundException("The email " + signUp.getEmail() + " is existed, please try again."));
+                return Mono.error(new EmailOrUsernameNotFoundException("The email " + signUp.getEmail() + " already exists."));
             }
             if (existsByPhoneNumber(signUp.getPhone())) {
-                return Mono.error(new PhoneNumberNotFoundException("The phone number " + signUp.getPhone() + " is existed, please try again."));
+                return Mono.error(new PhoneNumberNotFoundException("The phone number " + signUp.getPhone() + " already exists."));
             }
 
             User user = modelMapper.map(signUp, User.class);
@@ -100,11 +101,11 @@ public class UserServiceImpl implements UserService {
     }
 
     private RoleName mapToRoleName(String roleName) {
-        return switch (roleName) {
-            case "ADMIN", "admin", "Admin" -> RoleName.ADMIN;
-            case "PM", "pm", "Pm" -> RoleName.PM;
-            case "USER", "user", "User" -> RoleName.USER;
-            default -> null;
+        return switch (roleName.toUpperCase()) {
+            case "ADMIN" -> RoleName.ADMIN;
+            case "PM" -> RoleName.PM;
+            case "USER" -> RoleName.USER;
+            default -> throw new IllegalArgumentException("Invalid role: " + roleName);
         };
     }
 
@@ -112,21 +113,16 @@ public class UserServiceImpl implements UserService {
     public Mono<JwtResponseMessage> login(Login signInForm) {
         return Mono.fromCallable(() -> {
             String usernameOrEmail = signInForm.getUsername();
-            boolean isEmail = usernameOrEmail.contains("@gmail.com");
+            boolean isEmail = usernameOrEmail.contains("@");
 
-            UserDetails userDetails;
-            if (isEmail) {
-                userDetails = userDetailsService.loadUserByEmail(usernameOrEmail);
-            } else {
-                userDetails = userDetailsService.loadUserByUsername(usernameOrEmail);
-            }
+            UserDetails userDetails = isEmail
+                    ? userDetailsService.loadUserByEmail(usernameOrEmail)
+                    : userDetailsService.loadUserByUsername(usernameOrEmail);
 
-            // check username
             if (userDetails == null) {
                 throw new UserNotFoundException("User not found");
             }
 
-            // Check password
             if (!passwordEncoder.matches(signInForm.getPassword(), userDetails.getPassword())) {
                 throw new PasswordNotFoundException("Incorrect password");
             }
@@ -157,97 +153,65 @@ public class UserServiceImpl implements UserService {
                             .roles(userPrinciple.roles())
                             .build())
                     .build();
-        }).onErrorResume(Mono::error);
+        });
     }
-
 
     @Override
     public Mono<Void> logout() {
         return Mono.defer(() -> {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-            SecurityContextHolder.getContext().setAuthentication(null);
-
-            String currentToken = getCurrentToken();
-
-            if (authentication != null && authentication.isAuthenticated()) {
-                // Invalidate the current token by reducing its expiration time
-                String updatedToken = jwtProvider.reduceTokenExpiration(currentToken);
-            }
-
             SecurityContextHolder.clearContext();
-
             return Mono.empty();
         });
-    }
-
-    private String getCurrentToken() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        if (authentication != null && authentication.isAuthenticated()) {
-            Object credentials = authentication.getCredentials();
-
-            if (credentials instanceof String) {
-                return (String) credentials;
-            }
-        }
-
-        return null;
     }
 
     @Transactional
     @Override
     public Mono<User> update(Long id, SignUp updateDTO) {
-        try {
+        return Mono.fromCallable(() -> {
             User existingUser = userRepository.findById(id)
-                    .orElseThrow(() -> new UserNotFoundException("User not found userId: " + id + " for update"));
+                    .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
 
             modelMapper.map(updateDTO, existingUser);
             existingUser.setPassword(passwordEncoder.encode(updateDTO.getPassword()));
-
-            return Mono.just(userRepository.save(existingUser));
-        } catch (Exception e) {
-            return Mono.error(e);
-        }
+            return userRepository.save(existingUser);
+        });
     }
 
     @Transactional
     @Override
     public Mono<String> changePassword(ChangePasswordRequest request) {
-        try {
+        return Mono.fromCallable(() -> {
             UserDetails userDetails = getCurrentUserDetails();
             String username = userDetails.getUsername();
 
-            User existingUser = findByUsername(username)
+            User existingUser = userRepository.findByUsername(username)
                     .orElseThrow(() -> new UserNotFoundException("User not found with username " + username));
 
-            if (passwordEncoder.matches(request.getOldPassword(), userDetails.getPassword())) {
-                if (validateNewPassword(request.getNewPassword(), request.getConfirmPassword())) {
-                    existingUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
-                    userRepository.save(existingUser);
-
-                    // send email through kafka client
-                    EmailDetails emailDetails = emailDetailsConfig(username);
-
-                    return eventProducer.send(KafkaConstant.PROFILE_ONBOARDING_TOPIC, gson.toJson(emailDetails))
-                            .thenReturn("Password changed successfully")
-                            .publishOn(Schedulers.boundedElastic());
-                }
-
-                return Mono.just("Password changed failed.");
-            } else {
-                return Mono.error(new PasswordNotFoundException("Incorrect password"));
+            if (!passwordEncoder.matches(request.getOldPassword(), userDetails.getPassword())) {
+                throw new PasswordNotFoundException("Incorrect password");
             }
-        } catch (Exception e) {
-            return Mono.error(new UserNotAuthenticatedException("Transaction silently rolled back"));
-        }
+
+            if (!Objects.equals(request.getNewPassword(), request.getConfirmPassword())) {
+                throw new IllegalArgumentException("New password and confirmation do not match.");
+            }
+
+            existingUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            userRepository.save(existingUser);
+
+            EmailDetails emailDetails = emailDetailsConfig(username);
+
+            eventProducer.send(KafkaConstant.PROFILE_ONBOARDING_TOPIC, gson.toJson(emailDetails)).subscribe();
+
+            return "Password changed successfully";
+        }).publishOn(Schedulers.boundedElastic());
     }
 
     private EmailDetails emailDetailsConfig(String username) {
         return EmailDetails.builder()
                 .recipient("hoangtien2k3dev@gmail.com")
                 .msgBody(textSendEmailChangePasswordSuccessfully(username))
-                .subject("Password Change Successful: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                .subject("Password Change Successful: " +
+                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
                 .attachment("Please be careful, don't let this information leak")
                 .build();
     }
@@ -255,44 +219,29 @@ public class UserServiceImpl implements UserService {
     public String textSendEmailChangePasswordSuccessfully(String username) {
         return "Hey " + username + "!\n\n" +
                 "This is a confirmation that your password has been successfully changed.\n" +
-                " If you did not initiate this change, please contact our support team immediately.\n" +
-                "If you have any questions or concerns, feel free to reach out to us.\n\n" +
-                "Best regards:\n\n" +
-                "Contact: hoangtien2k3qx1@gmail.com\n" +
-                "Fanpage: https://hoangtien2k3qx1.github.io/";
+                "If you did not initiate this change, please contact our support team immediately.\n\n" +
+                "Best regards,\nShopStream Team";
     }
 
     private UserDetails getCurrentUserDetails() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication.isAuthenticated() && authentication.getPrincipal() instanceof UserDetails) {
-            return (UserDetails) authentication.getPrincipal();
-        } else {
-            throw new UserNotAuthenticatedException("User not authenticated.");
+        if (authentication != null && authentication.isAuthenticated()
+                && authentication.getPrincipal() instanceof UserDetails userDetails) {
+            return userDetails;
         }
-    }
-
-    private boolean validateNewPassword(String newPassword, String confirmPassword) {
-        return Objects.equals(newPassword, confirmPassword);
+        throw new UserNotAuthenticatedException("User not authenticated.");
     }
 
     @Transactional
     @Override
     public String delete(Long id) {
-        userRepository.findById(id)
-                .ifPresentOrElse(
-                        user -> {
-                            try {
-                                userRepository.delete(user);
-                            } catch (DataAccessException e) {
-                                throw new RuntimeException("Error deleting user with userId: " + id, e);
-                            }
-                        },
-                        () -> {
-                            throw new UserNotFoundException("User not found for userId: " + id);
-                        }
-                );
+        userRepository.findById(id).ifPresentOrElse(
+                userRepository::delete,
+                () -> { throw new UserNotFoundException("User not found with id: " + id); }
+        );
         return "User with id " + id + " deleted successfully.";
     }
+
 
     public Mono<String> refreshToken(String refreshToken) {
         return webClientBuilder.build()
@@ -300,21 +249,20 @@ public class UserServiceImpl implements UserService {
                 .uri(refreshTokenUrl)
                 .header("Refresh-Token", refreshToken)
                 .retrieve()
-                .onStatus(HttpStatus::is4xxClientError, clientResponse -> Mono.error(new IllegalArgumentException("Refresh token không hợp lệ")))
+                .onStatus(HttpStatusCode::is4xxClientError,
+                        clientResponse -> Mono.error(new IllegalArgumentException("Invalid refresh token")))
                 .bodyToMono(JwtResponseMessage.class)
-                .map(JwtResponseMessage::getAccessToken); // Sử dụng getAccessToken để lấy token từ JwtResponse
+                .map(JwtResponseMessage::getAccessToken);
     }
 
     @Override
     public Optional<User> findById(Long userId) {
-        return Optional.of(userRepository.findById(userId))
-                .orElseThrow(() -> new UserNotFoundException("User not found with userId: " + userId));
+        return userRepository.findById(userId);
     }
 
     @Override
     public Optional<User> findByUsername(String userName) {
-        return Optional.ofNullable(userRepository.findByUsername(userName)
-                .orElseThrow(() -> new UserNotFoundException("User not found with userName: " + userName)));
+        return userRepository.findByUsername(userName);
     }
 
     @Override
@@ -322,7 +270,6 @@ public class UserServiceImpl implements UserService {
         Sort sort = Sort.by(Sort.Direction.fromString(sortOrder), sortBy);
         PageRequest pageRequest = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.findAll(pageRequest);
-
         return usersPage.map(user -> modelMapper.map(user, UserDto.class));
     }
 
@@ -337,5 +284,4 @@ public class UserServiceImpl implements UserService {
     public boolean existsByPhoneNumber(String phone) {
         return userRepository.existsByPhoneNumber(phone);
     }
-
 }

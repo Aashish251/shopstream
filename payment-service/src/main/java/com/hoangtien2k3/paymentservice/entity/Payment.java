@@ -1,9 +1,10 @@
 package com.hoangtien2k3.paymentservice.entity;
 
 
+import jakarta.persistence.*;
 import lombok.*;
 
-import javax.persistence.*;
+//import javax.persistence.*;
 import java.io.Serial;
 import java.io.Serializable;
 
